@@ -33,7 +33,7 @@ logger = logging.getLogger('digits.tools.inference')
 """
 Write results to CSV files
 """
-def write_to_CSV(filename, input_list, results, labelfile) :
+def write_to_CSV(filename, input_list, results, labelfile, write_top1=False) :
 
     #Create CSV file
     with open(filename, 'wb') as csvfile:
@@ -44,7 +44,10 @@ def write_to_CSV(filename, input_list, results, labelfile) :
         with open(labelfile) as infile:
             labels = infile.readlines()
         labels.insert(0,'image')
-        writer.writerow([label.strip() for label in labels])
+        row = [label.strip() for label in labels]
+        if (write_top1 == True):
+            row.append('Top-1 Label')
+        writer.writerow(row)
 
         #Iterate images
         with open(input_list) as infile:
@@ -56,6 +59,9 @@ def write_to_CSV(filename, input_list, results, labelfile) :
             row = [os.path.basename(path)]
             #Write results
             row += results[idx].tolist()
+            #Add TOP-1 Label
+            if (write_top1 == True):
+                row += [labels[results[idx].argmax()+1]]
             writer.writerow(row)
 
     return
@@ -72,7 +78,8 @@ def infer(input_list,
           layers,
           gpu,
           input_is_db,
-          resize):
+          resize,
+          write_top1):
     """
     Perform inference on a list of images using the specified model
     """
@@ -216,8 +223,13 @@ def infer(input_list,
     #     dset.attrs['id'] = output_id
 
     #Write to CSV (Kaggle Template, but very generic)
+
+    #Create directory if not exists
+    if (os.path.exists(output_dir) == False) :
+        os.makedirs(output_dir)
+
     write_to_CSV(os.path.join(output_dir, 'inference.csv'), input_list, outputs[task._caffe_net._output_list[0]],
-                 os.path.join(dataset._dir, dataset.labels_file))
+                 os.path.join(dataset._dir, dataset.labels_file), write_top1=write_top1)
 
     # write visualization data
     if visualizations is not None and len(visualizations)>0:
@@ -311,6 +323,13 @@ if __name__ == '__main__':
         dest='resize',
         action='store_false')
 
+    parser.add_argument(
+        '--write-top1',
+        action='store_true',
+        dest='write_top1',
+        help='Add column Top1 label to output CSV',
+        )
+
     parser.set_defaults(resize=True)
 
     args = vars(parser.parse_args())
@@ -326,7 +345,8 @@ if __name__ == '__main__':
             args['layers'],
             args['gpu'],
             args['db'],
-            args['resize']
+            args['resize'],
+            args['write_top1']
             )
     except Exception as e:
         logger.error('%s: %s' % (type(e).__name__, e.message))
