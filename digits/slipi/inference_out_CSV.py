@@ -58,7 +58,7 @@ def write_to_CSV(filename, input_list, results, labelfile, write_top1=False) :
             #Kaggle template needs the filename with extension
             row = [os.path.basename(path)]
             #Write results
-            row += results[idx].tolist()
+            row += results[idx].flatten().tolist()
             #Add TOP-1 Label
             if (write_top1 == True):
                 row += [labels[results[idx].argmax()+1]]
