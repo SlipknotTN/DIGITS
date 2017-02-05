@@ -228,7 +228,11 @@ def infer(input_list,
     if (os.path.exists(output_dir) == False) :
         os.makedirs(output_dir)
 
-    write_to_CSV(os.path.join(output_dir, 'inference.csv'), input_list, outputs[task._caffe_net._output_list[0]],
+    if (write_top1) :
+        filename = 'inference_withtop1.csv'
+    else :
+        filename = 'inference.csv'
+    write_to_CSV(os.path.join(output_dir, filename), input_list, outputs[task._caffe_net._output_list[0]],
                  os.path.join(dataset._dir, dataset.labels_file), write_top1=write_top1)
 
     # write visualization data
