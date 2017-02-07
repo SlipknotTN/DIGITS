@@ -16,3 +16,6 @@ TAGS
 /build/
 /dist/
 /*.egg-info/
+
+#Pycharm files
+*.idea/*
