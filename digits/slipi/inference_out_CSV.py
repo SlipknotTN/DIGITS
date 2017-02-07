@@ -28,6 +28,8 @@ import caffe_pb2
 
 import csv
 
+import digits.slipi.crop
+
 logger = logging.getLogger('digits.tools.inference')
 
 """
@@ -79,6 +81,7 @@ def infer(input_list,
           gpu,
           input_is_db,
           resize,
+          oversample,
           write_top1):
     """
     Perform inference on a list of images using the specified model
@@ -185,42 +188,49 @@ def infer(input_list,
     visualizations = None
     predictions = []
 
-    if n_input_samples == 0:
-        raise InferenceError("Unable to load any image from file '%s'" % repr(input_list))
-    elif n_input_samples == 1:
-        # single image inference
-        outputs, visualizations = model.train_task().infer_one(
-            input_data[0],
-            snapshot_epoch=epoch,
-            layers=layers,
-            gpu=gpu,
-            resize=resize)
-    else:
-        if layers != 'none':
-            raise InferenceError("Layer visualization is not supported for multiple inference")
-        outputs = model.train_task().infer_many(
-            input_data,
-            snapshot_epoch=epoch,
-            gpu=gpu,
-            resize=resize)
+    #One prediction over whole image
+    if (oversample == False) :
 
-    # write to hdf5 file
-    # db_path = os.path.join(output_dir, 'inference.hdf5')
-    # db = h5py.File(db_path, 'w')
-    #
-    # # write input paths and images to database
-    # db.create_dataset("input_ids", data = input_ids)
-    # db.create_dataset("input_data", data = input_data)
-    #
-    # # write outputs to database
-    # db_outputs = db.create_group("outputs")
-    # for output_id, output_name in enumerate(outputs.keys()):
-    #     output_data = outputs[output_name]
-    #     output_key = base64.urlsafe_b64encode(str(output_name))
-    #     dset = db_outputs.create_dataset(output_key, data=output_data)
-    #     # add ID attribute so outputs can be sorted in
-    #     # the order they appear in here
-    #     dset.attrs['id'] = output_id
+        if n_input_samples == 0:
+            raise InferenceError("Unable to load any image from file '%s'" % repr(input_list))
+        elif n_input_samples == 1:
+            # single image inference
+            outputs, visualizations = model.train_task().infer_one(
+                input_data[0],
+                snapshot_epoch=epoch,
+                layers=layers,
+                gpu=gpu,
+                resize=resize)
+        else:
+            if layers != 'none':
+                raise InferenceError("Layer visualization is not supported for multiple inference")
+            outputs = model.train_task().infer_many(
+                input_data,
+                snapshot_epoch=epoch,
+                gpu=gpu,
+                resize=resize)
+
+    #Oversample: iterate over multiple crops and get the best result
+    else :
+
+        for singleImage in input_data :
+
+            netInputSize = model.train_task().crop_size
+
+            crops = digits.slipi.crop.getMultipleCrops(image=singleImage, squareSize=netInputSize, debug=False)
+
+            outputsSingleImage = model.train_task().infer_many(
+                crops,
+                snapshot_epoch=epoch,
+                gpu=gpu,
+                resize=resize)
+
+            #Pick the best prediction
+            #TODO: Consider NoF special behaviour
+
+            print (outputsSingleImage)
+
+
 
     #Write to CSV (Kaggle Template, but very generic)
 
@@ -328,6 +338,13 @@ if __name__ == '__main__':
         action='store_false')
 
     parser.add_argument(
+        '--oversample',
+        action='store_true',
+        dest='oversample',
+        help='Predictions over multiple crops for each image',
+        )
+
+    parser.add_argument(
         '--write-top1',
         action='store_true',
         dest='write_top1',
@@ -337,6 +354,9 @@ if __name__ == '__main__':
     parser.set_defaults(resize=True)
 
     args = vars(parser.parse_args())
+
+    if (args['oversample'] == True and args['resize'] == True) :
+        raise Exception("With oversample you must select no-resize")
 
     try:
         infer(
@@ -350,6 +370,7 @@ if __name__ == '__main__':
             args['gpu'],
             args['db'],
             args['resize'],
+            args['oversample'],
             args['write_top1']
             )
     except Exception as e:
