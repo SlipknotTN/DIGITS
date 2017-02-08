@@ -35,7 +35,7 @@ logger = logging.getLogger('digits.tools.inference')
 """
 Write results to CSV files
 """
-def write_to_CSV(filename, input_list, results, labelfile, write_top1=False) :
+def write_to_CSV(filename, input_list, results, labels, write_top1=False) :
 
     #Create CSV file
     with open(filename, 'wb') as csvfile:
@@ -43,10 +43,8 @@ def write_to_CSV(filename, input_list, results, labelfile, write_top1=False) :
         writer = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
 
         #Write header
-        with open(labelfile) as infile:
-            labels = infile.readlines()
         labels.insert(0,'image')
-        row = [label.strip() for label in labels]
+        row = labels
         if (write_top1 == True):
             row.append('Top-1 Label')
         writer.writerow(row)
@@ -82,6 +80,7 @@ def infer(input_list,
           input_is_db,
           resize,
           oversample,
+          noObjectClass,
           write_top1):
     """
     Perform inference on a list of images using the specified model
@@ -186,7 +185,12 @@ def infer(input_list,
 
     # perform inference
     visualizations = None
-    predictions = []
+
+    #Read labels
+    with open(os.path.join(dataset._dir, dataset.labels_file)) as infile:
+        labels = infile.readlines()
+    labels = [label.strip() for label in labels]
+    noObjectClassIndex = labels.index(noObjectClass)
 
     #One prediction over whole image
     if (oversample == False) :
@@ -213,6 +217,8 @@ def infer(input_list,
     #Oversample: iterate over multiple crops and get the best result
     else :
 
+        multiCropsOutputs = []
+
         for singleImage in input_data :
 
             netInputSize = model.train_task().crop_size
@@ -226,11 +232,38 @@ def infer(input_list,
                 resize=resize)
 
             #Pick the best prediction
-            #TODO: Consider NoF special behaviour
 
-            print (outputsSingleImage)
+            #Pick the softmax output
+            softmaxOut = outputsSingleImage[task._caffe_net._output_list[0]]
+            #Array with the max index for each class
+            maxIndexForEachClass = np.argmax(softmaxOut,axis=0)
 
+            #Max values for each class
+            classMaxPredictions = []
+            classMaxPredictions.append([softmaxOut[cropId][classId] for classId, cropId in enumerate(maxIndexForEachClass)])
 
+            classMaxPredictions = classMaxPredictions[0]
+
+            #We invert noObjectClass value for subsequent maximum analysis
+            classMaxPredictions[noObjectClassIndex] = 1 - classMaxPredictions[noObjectClassIndex]
+
+            #For each class pick the crop with the best confidence
+
+            #Consider NoObject class special behaviour
+            #If any object class overcome 0.7 we keep it and select that crop's prediction as output row
+            #TODO: Maybe consider other fishes maxs?!
+            objectClassMaxPredictions = np.delete(classMaxPredictions,noObjectClassIndex)
+            if np.max(objectClassMaxPredictions) > 0.7 :
+                multiCropsOutputs.append(softmaxOut[maxIndexForEachClass[np.argmax(classMaxPredictions)]])
+
+            #Else select as output the best NoF crop prediction
+            else :
+                multiCropsOutputs.append(softmaxOut[maxIndexForEachClass[noObjectClassIndex]])
+
+    if oversample == False :
+        predictions = outputs[task._caffe_net._output_list[0]]
+    else :
+        predictions = multiCropsOutputs
 
     #Write to CSV (Kaggle Template, but very generic)
 
@@ -242,8 +275,8 @@ def infer(input_list,
         filename = 'inference_withtop1.csv'
     else :
         filename = 'inference.csv'
-    write_to_CSV(os.path.join(output_dir, filename), input_list, outputs[task._caffe_net._output_list[0]],
-                 os.path.join(dataset._dir, dataset.labels_file), write_top1=write_top1)
+    write_to_CSV(os.path.join(output_dir, filename), input_list, predictions,
+                 labels, write_top1=write_top1)
 
     # write visualization data
     if visualizations is not None and len(visualizations)>0:
@@ -345,6 +378,14 @@ if __name__ == '__main__':
         )
 
     parser.add_argument(
+        '--no-object-class',
+        type=str,
+        default='',
+        dest='no_object_class',
+        help='No object class name'
+        )
+
+    parser.add_argument(
         '--write-top1',
         action='store_true',
         dest='write_top1',
@@ -371,6 +412,7 @@ if __name__ == '__main__':
             args['db'],
             args['resize'],
             args['oversample'],
+            args['no_object_class'],
             args['write_top1']
             )
     except Exception as e:
