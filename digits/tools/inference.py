@@ -178,6 +178,8 @@ def infer(input_list,
     db_outputs = db.create_group("outputs")
     for output_id, output_name in enumerate(outputs.keys()):
         output_data = outputs[output_name]
+        #Reshape to 2D array
+        output_data = np.reshape(output_data,(n_input_samples,-1))
         output_key = base64.urlsafe_b64encode(str(output_name))
         dset = db_outputs.create_dataset(output_key, data=output_data)
         # add ID attribute so outputs can be sorted in
