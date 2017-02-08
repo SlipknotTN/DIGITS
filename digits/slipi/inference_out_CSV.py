@@ -235,6 +235,7 @@ def infer(input_list,
 
             #Pick the softmax output
             softmaxOut = outputsSingleImage[task._caffe_net._output_list[0]]
+            softmaxOut = np.reshape(softmaxOut, (softmaxOut.shape[0], softmaxOut.shape[1]))
             #Array with the max index for each class
             maxIndexForEachClass = np.argmax(softmaxOut,axis=0)
 
