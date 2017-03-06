@@ -9,6 +9,9 @@ import numpy as np
 import PIL.Image
 import os
 import sys
+
+import cv2
+
 try:
     from cStringIO import StringIO
 except ImportError:
@@ -81,7 +84,10 @@ def infer(input_list,
           resize,
           oversample,
           noObjectClass,
-          write_top1):
+          write_top1,
+          isObjectOutputID,
+          actualObjectOutputID,
+          isObjectOutputFlatPosition):
     """
     Perform inference on a list of images using the specified model
     """
@@ -190,7 +196,6 @@ def infer(input_list,
     with open(os.path.join(dataset._dir, dataset.labels_file)) as infile:
         labels = infile.readlines()
     labels = [label.strip() for label in labels]
-    noObjectClassIndex = labels.index(noObjectClass)
 
     #One prediction over whole image
     if (oversample == False) :
@@ -234,7 +239,7 @@ def infer(input_list,
             #Pick the best prediction
 
             #Pick the softmax output
-            softmaxOut = outputsSingleImage[task._caffe_net._output_list[0]]
+            softmaxOut = outputsSingleImage[task._caffe_net._output_list[actualObjectOutputID]]
             softmaxOut = np.reshape(softmaxOut, (softmaxOut.shape[0], softmaxOut.shape[1]))
             #Array with the max index for each class
             maxIndexForEachClass = np.argmax(softmaxOut,axis=0)
@@ -245,26 +250,108 @@ def infer(input_list,
 
             classMaxPredictions = classMaxPredictions[0]
 
-            #We invert noObjectClass value for subsequent maximum analysis
-            classMaxPredictions[noObjectClassIndex] = 1 - classMaxPredictions[noObjectClassIndex]
+            #Consider NoObjectClass special behaviour (does not work well)
+            if (noObjectClass is not None):
 
-            #For each class pick the crop with the best confidence
+                noObjectClassIndex = labels.index(noObjectClass)
 
-            #Consider NoObject class special behaviour
-            #If any object class overcome 0.7 we keep it and select that crop's prediction as output row
-            #TODO: Maybe consider other fishes maxs?!
-            objectClassMaxPredictions = np.delete(classMaxPredictions,noObjectClassIndex)
-            if np.max(objectClassMaxPredictions) > 0.7 :
-                multiCropsOutputs.append(softmaxOut[maxIndexForEachClass[np.argmax(classMaxPredictions)]])
+                #We invert noObjectClass value for subsequent maximum analysis
+                classMaxPredictions[noObjectClassIndex] = 1 - classMaxPredictions[noObjectClassIndex]
 
-            #Else select as output the best NoF crop prediction
-            else :
-                multiCropsOutputs.append(softmaxOut[maxIndexForEachClass[noObjectClassIndex]])
+                #For each class pick the crop with the best confidence
+
+                #Consider NoObject class special behaviour
+                #If any object class overcome 0.7 we keep it and select that crop's prediction as output row
+                #TODO: Maybe consider other fishes maxs?!
+                objectClassMaxPredictions = np.delete(classMaxPredictions,noObjectClassIndex)
+                if np.max(objectClassMaxPredictions) > 0.7:
+                    multiCropsOutputs.append(softmaxOut[maxIndexForEachClass[np.argmax(classMaxPredictions)]])
+
+                #Else select as output the best NoF crop prediction
+                else :
+                    multiCropsOutputs.append(softmaxOut[maxIndexForEachClass[noObjectClassIndex]])
+
+            # Is fish output evaluation, if a crop has a fish we evaluate the type of fish.
+            else:
+
+                # We set the position of the isObjectOutput for correct CSV export
+                noObjectClassIndex = isObjectOutputFlatPosition
+
+                # Evaluate IsObjectOutput
+                softmaxIsObj = outputsSingleImage[task._caffe_net._output_list[isObjectOutputID]]
+                softmaxIsObj = np.reshape(softmaxIsObj, (softmaxIsObj.shape[0], softmaxIsObj.shape[1]))
+
+                # Max IsObject Index (crops that most probable contains a fish)
+                maxIndexForEachIsObjClass = np.argmax(softmaxIsObj, axis=0)
+
+                # TODO: Compare with argmax with specific fish species
+                # Max values for IsObjectClass (first class is IsObject, second is NoObject)
+                maxIsObjectProb = softmaxIsObj[maxIndexForEachIsObjClass[0]][0]
+
+                print("Max isFishProb: " + str(maxIsObjectProb))
+
+                # TODO:
+
+                # Draw max crops (most probable IsFish)
+                #cv2.imshow("crops", crops[maxIndexForEachIsObjClass[0]])
+                #cv2.waitKey(0)
+
+
+                # Joint evaluation of isFish probability and specific fish probability:
+                # simple product Fish probability times single spec classification
+
+                # softmaxOut is 50x7 (crops x classes), softmaxIsObj is 50x2 (crops x classes)
+                # we want to multiply all thr rows (fish class probability of softmaxOut),
+                # for isFish probability (first value of each row of softmaxIsObj
+
+                isObjectReplicated = np.repeat(np.reshape(softmaxIsObj[:,0],(len(crops),1)),7,axis=1)
+
+                mergedPrediction = softmaxOut * isObjectReplicated
+                maxIndexForMergedPrediction = np.argmax(mergedPrediction, axis=0)
+
+                # Max values for each class
+                mergedClassMaxPredictions = []
+                mergedClassMaxPredictions.append(
+                    [mergedPrediction[cropId][classId] for classId, cropId in enumerate(maxIndexForMergedPrediction)])
+
+                # 1D array
+                mergedClassMaxPredictions = mergedClassMaxPredictions[0]
+
+                print ("Max merged prediction: " + str(np.max(mergedClassMaxPredictions)))
+
+                print ("IsFish Prob for max merged pred: " +
+                       str(softmaxIsObj[maxIndexForMergedPrediction[np.argmax(mergedClassMaxPredictions)]][0]))
+                print ("Spec prob for max merged pred: " +
+                       str(softmaxOut[maxIndexForMergedPrediction[np.argmax(mergedClassMaxPredictions)]][np.argmax(mergedClassMaxPredictions)]))
+
+                print ("Which fish prediction: " + labels[np.argmax(mergedClassMaxPredictions)])
+
+                # Draw image
+                cv2.imshow("full_image",singleImage)
+                # Draw max merged prediction crop
+                cv2.imshow("crops", crops[maxIndexForMergedPrediction[np.argmax(mergedClassMaxPredictions)]])
+                cv2.waitKey(0)
+
+                # TODO: Increase the number of crops??
+
+                # Possible IsFish Threshold 0.9 (or even 0.99)
+
+                # TODO: How to select the NoF prediction and other when we think that the image contains no fish?!
+
+                # TODO: Run this analysis with GoogleNet instead of SqueezeNet
+
+                pass
+
+
 
     if oversample == False :
         predictions = outputs[task._caffe_net._output_list[0]]
     else :
         predictions = multiCropsOutputs
+        # In case of separate isObjectOutput, modify the labels (CSV header)
+        if noObjectClass is None:
+            labels.insert(noObjectClassIndex,'NoF')
+
 
     #Write to CSV (Kaggle Template, but very generic)
 
@@ -381,7 +468,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--no-object-class',
         type=str,
-        default='',
+        default=None,
         dest='no_object_class',
         help='No object class name'
         )
@@ -391,6 +478,30 @@ if __name__ == '__main__':
         action='store_true',
         dest='write_top1',
         help='Add column Top1 label to output CSV',
+        )
+
+    parser.add_argument(
+        '--is-object-output',
+        type=int,
+        default=None,
+        dest='is-object-output',
+        help='Output ID for the IsObject boolean evaluation',
+        )
+
+    parser.add_argument(
+        '--actual-object-output',
+        type=int,
+        default=0,
+        dest='actual-object-output',
+        help='Output ID for the actual object classification',
+        )
+
+    parser.add_argument(
+        '--is-object-output-flat-position',
+        type=int,
+        default=None,
+        dest='is-object-output-flat-position',
+        help='Is Object output position on the predictions export, used with isObjectOutput',
         )
 
     parser.set_defaults(resize=True)
@@ -414,7 +525,10 @@ if __name__ == '__main__':
             args['resize'],
             args['oversample'],
             args['no_object_class'],
-            args['write_top1']
+            args['write_top1'],
+            args['is-object-output'],
+            args['actual-object-output'],
+            args['is-object-output-flat-position']
             )
     except Exception as e:
         logger.error('%s: %s' % (type(e).__name__, e.message))
