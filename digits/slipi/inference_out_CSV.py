@@ -284,18 +284,14 @@ def infer(input_list,
                 # Max IsObject Index (crops that most probable contains a fish)
                 maxIndexForEachIsObjClass = np.argmax(softmaxIsObj, axis=0)
 
-                # TODO: Compare with argmax with specific fish species
                 # Max values for IsObjectClass (first class is IsObject, second is NoObject)
                 maxIsObjectProb = softmaxIsObj[maxIndexForEachIsObjClass[0]][0]
 
                 print("Max isFishProb: " + str(maxIsObjectProb))
 
-                # TODO:
-
                 # Draw max crops (most probable IsFish)
                 #cv2.imshow("crops", crops[maxIndexForEachIsObjClass[0]])
                 #cv2.waitKey(0)
-
 
                 # Joint evaluation of isFish probability and specific fish probability:
                 # simple product Fish probability times single spec classification
@@ -319,30 +315,51 @@ def infer(input_list,
 
                 print ("Max merged prediction: " + str(np.max(mergedClassMaxPredictions)))
 
-                print ("IsFish Prob for max merged pred: " +
-                       str(softmaxIsObj[maxIndexForMergedPrediction[np.argmax(mergedClassMaxPredictions)]][0]))
+                isFishProbMergedPred = softmaxIsObj[maxIndexForMergedPrediction[np.argmax(mergedClassMaxPredictions)]][0]
+                print ("IsFish Prob for max merged pred: " + str(isFishProbMergedPred))
+                whichFishProbMergedPred = \
+                    softmaxOut[maxIndexForMergedPrediction[np.argmax(mergedClassMaxPredictions)]][np.argmax(mergedClassMaxPredictions)]
                 print ("Spec prob for max merged pred: " +
-                       str(softmaxOut[maxIndexForMergedPrediction[np.argmax(mergedClassMaxPredictions)]][np.argmax(mergedClassMaxPredictions)]))
+                       str(whichFishProbMergedPred))
 
                 print ("Which fish prediction: " + labels[np.argmax(mergedClassMaxPredictions)])
 
                 # Draw image
-                cv2.imshow("full_image",singleImage)
+                # cv2.imshow("full_image",singleImage)
                 # Draw max merged prediction crop
-                cv2.imshow("crops", crops[maxIndexForMergedPrediction[np.argmax(mergedClassMaxPredictions)]])
-                cv2.waitKey(0)
+                # cv2.imshow("crops", crops[maxIndexForMergedPrediction[np.argmax(mergedClassMaxPredictions)]])
+                # cv2.waitKey(0)
 
                 # TODO: Increase the number of crops??
 
-                # Possible IsFish Threshold 0.9 (or even 0.99)
-
                 # TODO: How to select the NoF prediction and other when we think that the image contains no fish?!
 
-                # TODO: Run this analysis with GoogleNet instead of SqueezeNet
+                # First try
+                # Possible IsFish Threshold 0.9 (or even 0.99)
+                # Initial condition isFishProb > 0.9, spec > 0.5
 
-                pass
+                NoFProb = 1 - isFishProbMergedPred
 
+                if isFishProbMergedPred > 0.9 and whichFishProbMergedPred > 0.5:
+                    # The sum will be slightly over 1, this should be ok for the challenge
+                    specProbs = softmaxOut[maxIndexForMergedPrediction[np.argmax(mergedClassMaxPredictions)]]
 
+                else:
+                    # NoF Prob will be predominant, Fish probability is equally distributed
+                    # TODO: We could make NoF more predominant
+                    # TODO: Manage the case where NoF is low, but whichFish is undecided, NoF shouldn't be predominant
+                    specProbs = np.ones(len(softmaxOut[0])) * isFishProbMergedPred / len(softmaxOut[0])
+
+                # TODO: Try other epochs
+
+                # TODO: Try OpenCV objectness to get better crops (multiscale)
+
+                # TODO: Train FishNoFish with other datasets (e.g. persons, boats, sea without fishes)
+
+                # TODO: Check manually dataset, remove errors (e.g. small fish from NoFish)
+
+                specProbs = np.insert(specProbs, noObjectClassIndex, NoFProb)
+                multiCropsOutputs.append(specProbs)
 
     if oversample == False :
         predictions = outputs[task._caffe_net._output_list[0]]
