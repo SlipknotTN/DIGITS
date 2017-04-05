@@ -228,7 +228,14 @@ def infer(input_list,
 
             netInputSize = model.train_task().crop_size
 
+            # Extreme oversample (sliding window of squareSize x squareSize, step squareSize / 2)
             crops = digits.slipi.crop.getMultipleCrops(image=singleImage, squareSize=netInputSize, debug=False)
+
+            # Submission >= 26
+            # Simple oversample (5X)
+            #crops = digits.slipi.crop.get5XCrops(image=singleImage, debug=False)
+            # Force resize to True with simple oversample
+            #resize = True
 
             outputsSingleImage = model.train_task().infer_many(
                 crops,
@@ -341,14 +348,23 @@ def infer(input_list,
                 NoFProb = 1 - isFishProbMergedPred
 
                 if isFishProbMergedPred > 0.9 and whichFishProbMergedPred > 0.5:
+
+                # Submission >= 26
+                # if maxIsObjectProb > 0.1:
+
                     # The sum will be slightly over 1, this should be ok for the challenge
                     specProbs = softmaxOut[maxIndexForMergedPrediction[np.argmax(mergedClassMaxPredictions)]]
 
+                    # Submission >= 26
+                    # NoFProb = min(0.01, NoFProb)
+
                 else:
                     # NoF Prob will be predominant, Fish probability is equally distributed
-                    # TODO: We could make NoF more predominant
-                    # TODO: Manage the case where NoF is low, but whichFish is undecided, NoF shouldn't be predominant
                     specProbs = np.ones(len(softmaxOut[0])) * isFishProbMergedPred / len(softmaxOut[0])
+
+                    # Try to augment NoF predominance when whichFish is undecided.
+                    #isFishGlobalMerge = min(isFishProbMergedPred, 0.1)
+                    #specProbs = np.ones(len(softmaxOut[0])) * isFishGlobalMerge / len(softmaxOut[0])
 
                 # TODO: Try other epochs
 

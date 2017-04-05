@@ -1,7 +1,51 @@
 import cv2
 import numpy as np
 
-def getMultipleCrops(image, squareSize, debug = False) :
+def get5XCrops(image, debug = False):
+    """
+    Simple augmentation. Angles and center. No checks on form factor
+    :param image:
+    :param squareSize:
+    :param debug:
+    :return:
+    """
+    width = image.shape[1]
+    height = image.shape[0]
+
+    crops = []
+
+    imageDebug = np.copy(image)
+
+    # Upper Left
+    crops.append(image[0:height/2, 0:width/2])
+
+    # Upper right
+    crops.append(image[0:height / 2, width / 2 + 1 : width - 1])
+
+    # Bottom left
+    crops.append(image[height / 2 + 1: height - 1, 0:width / 2])
+
+    # Bottom right
+    crops.append(image[height / 2 + 1: height - 1, width / 2 + 1 : width - 1])
+
+    # Center
+    crops.append(image[height / 4 * 1 + 1: height / 4 * 3, width / 4 * 1 + 1: width / 4 * 3])
+
+    if debug:
+        cv2.imshow("default", imageDebug)
+        cv2.waitKey(0)
+        for finalCrop in crops:
+            cv2.imshow("crops", finalCrop)
+            cv2.waitKey(0)
+
+    return crops
+
+
+
+def getMultipleCrops(image, squareSize, debug = False):
+    """
+    Sliding window crops every half square size. Crops are squares of squareSize
+    """
 
     width = image.shape[1]
     height = image.shape[0]
